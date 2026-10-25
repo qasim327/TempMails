@@ -32,14 +32,24 @@ export const FAQ: React.FC = () => {
         'Yes! Use the "Create Custom Email" input on the generator card to type any username (such as your name or project handle) and select any of our 5 active domain extensions.',
     },
     {
-      question: 'Is TempMailVault free and anonymous?',
+      question: 'How do the Temporary Phone Numbers work for SMS OTPs?',
       answer:
-        'Yes, TempMailVault is 100% free with unlimited generation. There are no registrations, passwords, or credit card requirements. No personal identification is stored.',
+        'Select any virtual phone number from our 8 supported countries (USA, UK, Canada, Netherlands, France, Germany, Sweden, Finland). Copy the phone number and enter it into TikTok, WhatsApp, Telegram, Google, Discord, or any platform requesting SMS verification. Incoming SMS messages and security codes appear in real time with 1-click "Copy OTP" affordances.',
     },
     {
-      question: 'Can I send emails from this disposable mailbox?',
+      question: 'Can I use temporary phone numbers for TikTok and WhatsApp verification?',
       answer:
-        'To protect our domain reputation and prevent spam abuse across the internet, TempMailVault is strictly an incoming receive-only service. It is optimized for OTPs, activations, download links, and confirmation emails.',
+        'Yes! Virtual numbers are active on international telecommunication carriers. When TikTok or WhatsApp sends an SMS verification code, our real-time SMS poller captures the SMS and parses the numeric code automatically.',
+    },
+    {
+      question: 'Is TempMailVault and TempNumberVault free and anonymous?',
+      answer:
+        'Yes, both temporary disposable emails and virtual SMS phone numbers are 100% free with unlimited usage. There are no registrations, passwords, or credit card requirements. No personal identification is stored.',
+    },
+    {
+      question: 'Can I send emails or SMS from these numbers?',
+      answer:
+        'To protect our server reputation and prevent spam abuse across the internet, TempMailVault is strictly an incoming receive-only service. It is optimized for OTPs, activations, download links, and confirmation messages.',
     },
   ];
 

@@ -22,11 +22,6 @@ export interface TempEmail {
 
 export const DEFAULT_DOMAINS = [
   'maxxspace.com',
-  'tempmailvault.live',
-  'maildrop.store',
-  'vaultmail.pro',
-  'tempmail.ltd',
-  'disposable.email',
 ] as const;
 
 export type SupportedDomain = string;

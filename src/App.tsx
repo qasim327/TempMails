@@ -6,6 +6,7 @@ import { EmailGenerator } from './components/EmailGenerator';
 import { Inbox } from './components/Inbox';
 import { EmailModal } from './components/EmailModal';
 import { TestEmailModal } from './components/TestEmailModal';
+import { SmsVault } from './components/SmsVault';
 import { HowItWorks } from './components/HowItWorks';
 import { FAQ } from './components/FAQ';
 import { Footer } from './components/Footer';
@@ -21,6 +22,8 @@ import {
   setupRealAccount,
   fetchLiveEmails,
   deleteLiveMessage,
+  deleteAllLiveMessages,
+  deleteLiveAccount,
   getSavedEmail,
   saveEmail,
   getSavedInbox,
@@ -34,6 +37,9 @@ import {
 
 function MainApp() {
   const toast = useToast();
+
+  // Active Tab: 'email' vs 'sms'
+  const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email');
 
   // Dark / Light Theme state
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -107,6 +113,12 @@ function MainApp() {
       if (!targetEmail || !targetEmail.includes('@')) {
         const username = generateRandomUsername();
         targetEmail = `${username}@${defaultDomain}`;
+      } else {
+        const domainPart = targetEmail.split('@')[1];
+        if (!liveDomains.includes(domainPart)) {
+          const username = targetEmail.split('@')[0];
+          targetEmail = `${username}@${defaultDomain}`;
+        }
       }
 
       const domainPart = targetEmail.split('@')[1];
@@ -208,13 +220,13 @@ function MainApp() {
     [soundEnabled, toast]
   );
 
-  // Background poller: runs every 6 seconds when auto-refresh is ON
+  // Background poller: runs every 3.5 seconds when auto-refresh is ON
   useEffect(() => {
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
       checkLiveInbox(false);
-    }, 6000);
+    }, 3500);
 
     return () => clearInterval(interval);
   }, [autoRefresh, checkLiveInbox]);
@@ -255,13 +267,21 @@ function MainApp() {
 
   // Button 3: Delete Email
   const handleDeleteEmail = async () => {
-    if (currentEmail) {
-      clearInboxStorage(currentEmail);
-    }
+    const ids = inbox.map((m) => m.id);
+    const oldEmail = currentEmail;
+    const oldToken = accountSession?.token;
+    const oldAccountId = accountSession?.accountId;
+
     setInbox([]);
     setCurrentEmail('');
     setAccountSession(null);
-    toast.info('Email Deleted');
+    toast.info('Email deleted permanently');
+
+    // Wipe messages and account on live server
+    if (oldEmail) {
+      deleteAllLiveMessages(oldToken, oldEmail, ids);
+      deleteLiveAccount(oldToken, oldAccountId);
+    }
 
     // Auto-generate fresh email after 0.5s
     setTimeout(async () => {
@@ -296,21 +316,26 @@ function MainApp() {
     setLoading(false);
   };
 
-  // Delete single message
+  // Delete single message permanently from server & inbox
   const handleDeleteSingleMessage = async (messageId: string) => {
+    // 1. Immediately remove from UI and storage
     setInbox((prev) => prev.filter((m) => m.id !== messageId));
-    if (accountSession?.token) {
-      await deleteLiveMessage(accountSession.token, messageId);
+    // 2. Permanently delete from live mail server & mark in deletedIds
+    if (currentEmail) {
+      await deleteLiveMessage(accountSession?.token, messageId, currentEmail);
+      saveInbox(currentEmail, inbox.filter((m) => m.id !== messageId));
     }
+    toast.info('Email deleted permanently from server');
   };
 
-  // Delete all messages
-  const handleDeleteAllMessages = () => {
+  // Delete all messages permanently from server & inbox
+  const handleDeleteAllMessages = async () => {
+    const ids = inbox.map((m) => m.id);
     setInbox([]);
     if (currentEmail) {
-      clearInboxStorage(currentEmail);
+      await deleteAllLiveMessages(accountSession?.token, currentEmail, ids);
     }
-    toast.info('All mails deleted');
+    toast.info('All emails permanently deleted from server');
   };
 
   // Open modal & mark as read
@@ -355,6 +380,8 @@ function MainApp() {
           setIsDark={setIsDark}
           soundEnabled={soundEnabled}
           setSoundEnabled={setSoundEnabled}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
           onLogoClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         />
 
@@ -367,79 +394,116 @@ function MainApp() {
             transition={{ duration: 0.4 }}
             className="text-center max-w-3xl mx-auto mb-6 sm:mb-8"
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Real Live Inbox · Ready to Receive Verification Codes</span>
+            {/* Top Switcher Pill */}
+            <div className="inline-flex items-center p-1 rounded-2xl bg-zinc-900/90 dark:bg-zinc-900/90 light:bg-zinc-100 border border-zinc-800 dark:border-zinc-800 light:border-zinc-300 shadow-lg mb-4">
+              <button
+                onClick={() => setActiveTab('email')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'email'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                    : 'text-zinc-400 hover:text-white light:text-zinc-600'
+                }`}
+              >
+                <span>✉️</span>
+                <span>Disposable Temp Mail</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('sms')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'sms'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                    : 'text-zinc-400 hover:text-white light:text-zinc-600'
+                }`}
+              >
+                <span>📱</span>
+                <span>Temp Phone Numbers (SMS)</span>
+              </button>
             </div>
 
-            <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-[1.1] text-balance">
-              TempMail<span className="text-purple-600 dark:text-purple-400">Vault</span>
-            </h1>
+            {activeTab === 'email' ? (
+              <>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 mb-3 block w-fit mx-auto">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Real Live Inbox · Active DNS MX Delivery</span>
+                </div>
 
-            <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 mt-3 max-w-xl mx-auto leading-relaxed text-balance">
-              Paste this disposable address anywhere you need an OTP or email confirmation. Only real emails sent to your address will appear in your inbox.
-            </p>
+                <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-[1.1] text-balance">
+                  TempMail<span className="text-purple-600 dark:text-purple-400">Vault</span>
+                </h1>
+
+                <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 mt-3 max-w-xl mx-auto leading-relaxed text-balance">
+                  Paste this disposable address anywhere you need an OTP or email confirmation. Only real emails sent to your address will appear in your inbox.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 mb-3 block w-fit mx-auto">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Active Virtual Numbers · 8 Countries Supported</span>
+                </div>
+
+                <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-[1.1] text-balance">
+                  TempNumber<span className="text-purple-600 dark:text-purple-400">Vault</span>
+                </h1>
+
+                <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 mt-3 max-w-xl mx-auto leading-relaxed text-balance">
+                  Pick any virtual temporary phone number to receive SMS OTP codes for TikTok, WhatsApp, Telegram, Google, etc. 100% Free with zero registration.
+                </p>
+              </>
+            )}
           </motion.div>
 
-          {/* Staggered Children: Generator Card & Inbox */}
-          <motion.div
-            initial="hidden"
-            animate="show"
-            variants={{
-              hidden: { opacity: 0 },
-              show: {
-                opacity: 1,
-                transition: {
-                  staggerChildren: 0.15,
-                },
-              },
-            }}
-            className="flex flex-col gap-6"
-          >
-            {/* Email Generator Card */}
-            <motion.div
-              variants={{
-                hidden: { opacity: 0, y: 20 },
-                show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-              }}
-            >
-              <EmailGenerator
-                currentEmail={currentEmail}
-                selectedDomain={selectedDomain}
-                setSelectedDomain={handleDomainChange}
-                availableDomains={availableDomains}
-                onGenerateNew={handleGenerateNew}
-                onDeleteEmail={handleDeleteEmail}
-                onCreateCustom={handleCreateCustom}
-                onSendTestEmail={() => setShowTestModal(true)}
-              />
-            </motion.div>
+          {/* Tab Content */}
+          <div className="flex flex-col gap-6">
+            {activeTab === 'email' ? (
+              <motion.div
+                key="email-tab"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="flex flex-col gap-6"
+              >
+                {/* Email Generator Card */}
+                <EmailGenerator
+                  currentEmail={currentEmail}
+                  selectedDomain={selectedDomain}
+                  setSelectedDomain={handleDomainChange}
+                  availableDomains={availableDomains}
+                  onGenerateNew={handleGenerateNew}
+                  onDeleteEmail={handleDeleteEmail}
+                  onCreateCustom={handleCreateCustom}
+                  onSendTestEmail={() => setShowTestModal(true)}
+                />
 
-            {/* Inbox Section */}
-            <motion.div
-              variants={{
-                hidden: { opacity: 0, y: 20 },
-                show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-              }}
-            >
-              <Inbox
-                inbox={inbox}
-                loading={loading}
-                autoRefresh={autoRefresh}
-                setAutoRefresh={setAutoRefresh}
-                onRefresh={handleRefresh}
-                onSelectEmail={handleSelectEmail}
-                onDeleteAll={handleDeleteAllMessages}
-                onSendTestEmail={() => setShowTestModal(true)}
-              />
-            </motion.div>
+                {/* Inbox Section */}
+                <Inbox
+                  inbox={inbox}
+                  loading={loading}
+                  autoRefresh={autoRefresh}
+                  setAutoRefresh={setAutoRefresh}
+                  onRefresh={handleRefresh}
+                  onSelectEmail={handleSelectEmail}
+                  onDeleteAll={handleDeleteAllMessages}
+                  onSendTestEmail={() => setShowTestModal(true)}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="sms-tab"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <SmsVault soundEnabled={soundEnabled} />
+              </motion.div>
+            )}
 
             {/* How It Works Section */}
             <HowItWorks />
 
             {/* FAQ Accordion Section */}
             <FAQ />
-          </motion.div>
+          </div>
         </main>
 
         {/* Footer with Legal Notice */}

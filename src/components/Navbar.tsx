@@ -8,6 +8,8 @@ interface NavbarProps {
   setIsDark: (dark: boolean) => void;
   soundEnabled: boolean;
   setSoundEnabled: (enabled: boolean) => void;
+  activeTab: 'email' | 'sms';
+  setActiveTab: (tab: 'email' | 'sms') => void;
   onLogoClick?: () => void;
 }
 
@@ -16,6 +18,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   setIsDark,
   soundEnabled,
   setSoundEnabled,
+  activeTab,
+  setActiveTab,
   onLogoClick,
 }) => {
   const toast = useToast();
@@ -64,33 +68,31 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </button>
 
-        {/* Zone 2: Navigation Links */}
-        <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-          <a
-            href="#generator"
-            className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors whitespace-nowrap"
+        {/* Mode Selector Tabs (Temp Mail vs Temp Numbers) */}
+        <div className="flex items-center p-1 rounded-xl bg-zinc-900/90 dark:bg-zinc-900/90 light:bg-zinc-100 border border-zinc-800 dark:border-zinc-800 light:border-zinc-200">
+          <button
+            onClick={() => setActiveTab('email')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'email'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'text-zinc-400 hover:text-zinc-200 light:text-zinc-600 light:hover:text-zinc-900'
+            }`}
           >
-            Email Generator
-          </a>
-          <a
-            href="#inbox"
-            className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors whitespace-nowrap"
+            <Mail className="w-3.5 h-3.5" />
+            <span>Temp Mail</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('sms')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'sms'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                : 'text-zinc-400 hover:text-zinc-200 light:text-zinc-600 light:hover:text-zinc-900'
+            }`}
           >
-            Live Inbox
-          </a>
-          <a
-            href="#how-it-works"
-            className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors whitespace-nowrap"
-          >
-            How It Works
-          </a>
-          <a
-            href="#faq"
-            className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors whitespace-nowrap"
-          >
-            FAQ
-          </a>
-        </nav>
+            <span>📱</span>
+            <span>Temp Numbers</span>
+          </button>
+        </div>
 
         {/* Zone 3: Interactive Controls (Sound & Theme Toggle) */}
         <div className="flex items-center gap-2 sm:gap-3">

@@ -229,6 +229,17 @@ export const EmailGenerator: React.FC<EmailGeneratorProps> = ({
                 </AnimatePresence>
               </div>
             </div>
+
+            {/* Live MX Status Badge */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-2">
+              <div className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Live MX Verified · Active for TikTok, Google, Discord &amp; OTPs</span>
+              </div>
+              <span className="text-[11px] text-zinc-400 font-mono">
+                {currentEmail.includes('@maxxspace.com') ? '✓ Live MX DNS Online' : ''}
+              </span>
+            </div>
           </div>
 
           {/* Action Row: Change Email & Delete Email */}

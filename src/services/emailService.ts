@@ -9,17 +9,36 @@ const STORAGE_KEYS = {
   SOUND_ENABLED: 'tmv_sound_enabled',
 };
 
-// API Base URLs - try local proxy first, fallback to direct
-const API_BASE_PROXY = '/api/mail';
+// API Base URLs - direct mail.tm works natively with CORS in browsers & Vercel
 const API_BASE_DIRECT = 'https://api.mail.tm';
+const API_BASE_PROXY = '/api/mail';
 
 async function fetchWithFallback(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  // 1. Try direct mail.tm API first (Essential for Vercel static deployment)
+  try {
+    const res = await fetch(`${API_BASE_DIRECT}${endpoint}`, options);
+    const contentType = res.headers.get('content-type') || '';
+    // 204 No Content has empty body, JSON/problem+json has data
+    if (res.status === 204 || (res.ok && (contentType.includes('json') || contentType.includes('problem+json'))) || res.status === 400 || res.status === 422) {
+      return res;
+    }
+  } catch {
+    // Direct call network issue, try local proxy fallback
+  }
+
+  // 2. Fallback to proxy (used in local dev server if needed)
   try {
     const res = await fetch(`${API_BASE_PROXY}${endpoint}`, options);
-    if (res.ok || res.status === 400 || res.status === 422) return res;
+    const contentType = res.headers.get('content-type') || '';
+    // Explicitly reject text/html so Vercel SPA rewrites don't return index.html as a fake 200 JSON
+    if (!contentType.includes('text/html') && (res.status === 204 || res.ok || res.status === 400 || res.status === 422)) {
+      return res;
+    }
   } catch {
-    // Proxy failed, try direct
+    // Proxy failed
   }
+
+  // Final fallback to direct
   return fetch(`${API_BASE_DIRECT}${endpoint}`, options);
 }
 
@@ -81,17 +100,19 @@ export async function getLiveDomains(): Promise<string[]> {
 
 // Create or login to real account on mail.tm
 export async function setupRealAccount(address: string): Promise<AccountSession> {
-  const password = `Tmv_${address.replace(/[^a-zA-Z0-9]/g, '')}_99!`;
+  const clean = address.replace(/[^a-zA-Z0-9]/g, '');
+  const candidatePasswords = ['Password123!', `Tmv_${clean}_99!`];
 
   let token: string | undefined;
   let accountId: string | undefined;
+  let usedPassword = candidatePasswords[0];
 
   try {
-    // 1. Try to create account
+    // 1. Try to create account with primary password
     const createRes = await fetchWithFallback('/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, password }),
+      body: JSON.stringify({ address, password: candidatePasswords[0] }),
     });
 
     if (createRes.ok) {
@@ -99,29 +120,69 @@ export async function setupRealAccount(address: string): Promise<AccountSession>
       accountId = accData.id;
     }
 
-    // 2. Obtain JWT token
-    const tokenRes = await fetchWithFallback('/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, password }),
-    });
+    // 2. Obtain JWT token - try candidate passwords
+    for (const pwd of candidatePasswords) {
+      try {
+        const tokenRes = await fetchWithFallback('/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address, password: pwd }),
+        });
 
-    if (tokenRes.ok) {
-      const tokenData = await tokenRes.json();
-      token = tokenData.token;
-      accountId = tokenData.id || accountId;
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          token = tokenData.token;
+          accountId = tokenData.id || accountId;
+          usedPassword = pwd;
+          break;
+        }
+      } catch {
+        // try next
+      }
     }
   } catch (e) {
     console.warn('Live mail service notice:', e);
   }
 
-  const session: AccountSession = { address, token, accountId, password };
+  const session: AccountSession = { address, token, accountId, password: usedPassword };
   try {
     localStorage.setItem(STORAGE_KEYS.ACCOUNT_DATA, JSON.stringify(session));
   } catch {
     // Ignore storage issues
   }
   return session;
+}
+
+const DELETED_IDS_PREFIX = 'tmv_deleted_ids_';
+
+export function getDeletedMessageIds(email: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`${DELETED_IDS_PREFIX}${email}`);
+    if (raw) {
+      return new Set(JSON.parse(raw));
+    }
+  } catch {
+    // ignore
+  }
+  return new Set();
+}
+
+export function markMessageAsDeleted(email: string, messageId: string): void {
+  try {
+    const set = getDeletedMessageIds(email);
+    set.add(messageId);
+    localStorage.setItem(`${DELETED_IDS_PREFIX}${email}`, JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+}
+
+export function clearDeletedMessageIds(email: string): void {
+  try {
+    localStorage.removeItem(`${DELETED_IDS_PREFIX}${email}`);
+  } catch {
+    // ignore
+  }
 }
 
 // Fetch REAL emails from mail.tm for this account
@@ -141,10 +202,14 @@ export async function fetchLiveEmails(token: string, toEmail: string): Promise<E
 
     const data = await res.json();
     const members = data['hydra:member'] || [];
+    const deletedIds = getDeletedMessageIds(toEmail);
+
+    // Filter out messages deleted by the user so they never reappear
+    const activeMembers = members.filter((msg: { id: string }) => !deletedIds.has(msg.id));
 
     // Fetch full detail for each message
     const detailedMessages: EmailMessage[] = await Promise.all(
-      members.map(async (msg: { id: string; from: { name: string; address: string }; subject: string; intro?: string; seen: boolean; createdAt: string }) => {
+      activeMembers.map(async (msg: { id: string; from: { name: string; address: string }; subject: string; intro?: string; seen: boolean; createdAt: string }) => {
         let fullBody = msg.intro || '';
         let htmlBody: string | undefined;
 
@@ -192,8 +257,11 @@ export async function fetchLiveEmails(token: string, toEmail: string): Promise<E
   }
 }
 
-// Delete message on live server
-export async function deleteLiveMessage(token: string | undefined, messageId: string): Promise<boolean> {
+// Delete message permanently on live server
+export async function deleteLiveMessage(token: string | undefined, messageId: string, email?: string): Promise<boolean> {
+  if (email) {
+    markMessageAsDeleted(email, messageId);
+  }
   if (!token) return true;
   try {
     const res = await fetchWithFallback(`/messages/${messageId}`, {
@@ -202,7 +270,42 @@ export async function deleteLiveMessage(token: string | undefined, messageId: st
         Authorization: `Bearer ${token}`,
       },
     });
-    return res.ok;
+    return res.status === 204 || res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Delete all messages permanently on live server
+export async function deleteAllLiveMessages(token: string | undefined, email: string, messageIds: string[]): Promise<void> {
+  messageIds.forEach((id) => markMessageAsDeleted(email, id));
+  clearInboxStorage(email);
+
+  if (!token || messageIds.length === 0) return;
+
+  await Promise.allSettled(
+    messageIds.map((id) =>
+      fetchWithFallback(`/messages/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    )
+  );
+}
+
+// Delete entire account permanently on live server
+export async function deleteLiveAccount(token: string | undefined, accountId: string | undefined): Promise<boolean> {
+  if (!token || !accountId) return true;
+  try {
+    const res = await fetchWithFallback(`/accounts/${accountId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res.status === 204 || res.ok;
   } catch {
     return false;
   }
