@@ -1,0 +1,6 @@
+{
+  "name": "TempMailVault - Unlimited Free Disposable Emails",
+  "description": "Fast, secure, anonymous disposable temporary email service with automatic OTP extraction and 3D UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
